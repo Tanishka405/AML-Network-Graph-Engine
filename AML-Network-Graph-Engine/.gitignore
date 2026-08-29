@@ -1,0 +1,75 @@
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.Python
+pip-wheel-metadata/
+
+# ── Virtual environments ───────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+ENV/
+.env
+.env.*
+
+# ── Secrets and credentials ────────────────────────────────────────────────────
+*.pem
+*.key
+*.p12
+secrets.json
+credentials.json
+
+# ── Runtime databases (generated at startup) ──────────────────────────────────
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# ── Generated datasets (reproducible from scripts/generate_dataset.py) ────────
+*.csv
+*.parquet
+*.jsonl
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Testing ───────────────────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# ── Type checking / linting ───────────────────────────────────────────────────
+.mypy_cache/
+.ruff_cache/
+
+# ── Editor / OS ───────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ── Jupyter ───────────────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb
+
+# ── Streamlit ─────────────────────────────────────────────────────────────────
+.streamlit/
+
+# ── Docker ────────────────────────────────────────────────────────────────────
+*.tar
+
+# ── Miscellaneous ─────────────────────────────────────────────────────────────
+tmp/
+temp/
+scratch/

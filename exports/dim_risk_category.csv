@@ -1,0 +1,6 @@
+risk_category,min_score_threshold
+CRITICAL,0.8
+HIGH,0.6
+MEDIUM,0.4
+LOW,0.0
+UNFLAGGED,

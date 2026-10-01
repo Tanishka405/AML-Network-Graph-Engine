@@ -1,0 +1,17 @@
+kpi,value
+total_transactions,5000
+total_transaction_value,389549205.0
+average_transaction_value,77909.84
+median_transaction_value,9864.41
+total_alerts,610
+suspicious_transaction_rate_pct,12.2
+critical_alerts,57
+high_alerts,553
+high_risk_entity_count,198
+flagged_transaction_value,4978476.94
+flagged_transaction_value_pct,1.278
+structuring_alert_count,466
+circular_flow_entity_count,198
+high_risk_jurisdiction_exposure_value,241819638.99
+average_risk_score,0.7089
+generated_at_utc,2026-09-29T19:03:43.993012+00:00

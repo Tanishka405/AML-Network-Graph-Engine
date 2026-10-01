@@ -75,7 +75,7 @@ def _random_jurisdiction(
     high_risk: bool = False,
 ) -> str:
     if high_risk:
-        return str(rng.choice(list(cfg.high_risk_jurisdictions)))
+        return str(rng.choice(sorted(cfg.high_risk_jurisdictions)))
     return str(rng.choice(cfg.all_jurisdictions))
 
 

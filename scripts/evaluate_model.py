@@ -99,11 +99,16 @@ def main():
     args = parser.parse_args()
 
     os.makedirs(os.path.join(ROOT,"data"), exist_ok=True)
-    # Fresh DB for clean evaluation
+    # Fresh DB for clean evaluation. init_db() must run FIRST: on a clean
+    # checkout with no data/aml.db yet, DELETE FROM a table that doesn't
+    # exist raises sqlite3.OperationalError. This was found while auditing
+    # fresh-clone / deployment readiness -- init_db() is idempotent
+    # (CREATE TABLE IF NOT EXISTS), so calling it before the deletes is
+    # always safe, whether the DB already exists or not.
+    init_db()
     with db_conn() as conn:
         conn.execute("DELETE FROM transactions")
         conn.execute("DELETE FROM alerts")
-    init_db()
 
     # ── 1. Generate ──────────────────────────────────────────────────────────
     log.info("Generating %d transactions (seed=%d)…", args.transactions, args.seed)

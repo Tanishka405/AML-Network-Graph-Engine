@@ -1,0 +1,3 @@
+risk_label,alert_count,pct_of_all_tx,flagged_value,pct_of_total_value
+CRITICAL,57,1.14,464465.23,0.12
+HIGH,553,11.06,4514011.71,1.16

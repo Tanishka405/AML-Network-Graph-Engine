@@ -84,22 +84,38 @@ AML-Network-Graph-Engine/
 │   ├── aml_rules.py           # Explicit AML rule engine (5 rules)
 │   ├── risk_engine.py         # Composite risk score (configurable weights)
 │   ├── streaming.py           # Central processing loop + WebSocket broadcast
+│   ├── data_quality.py        # 14-check deterministic data-quality framework
 │   └── main.py                # FastAPI application
 ├── frontend/
-│   └── app.py                 # Streamlit compliance dashboard
+│   └── app.py                 # Streamlit dashboard (AML live tabs + Analytics tab)
+├── sql/
+│   └── analytics/              # 12 files, 19 business-question-driven SQL queries
 ├── scripts/
 │   ├── generate_dataset.py    # Seed 500 K+ transactions into SQLite
 │   ├── evaluate_model.py      # Reproducible precision/recall evaluation
-│   └── benchmark_sql.py       # SQL vs Python structuring detection benchmark
+│   ├── benchmark_sql.py       # SQL vs Python structuring detection benchmark
+│   ├── build_analytics_dataset.py  # Full analytics + star-schema pipeline -> exports/*.csv
+│   └── verify_reproducibility.py   # Runs the pipeline N times from clean state, diffs every export
+├── exports/                    # Committed reproducible fixture (~200KB, seed=42)
+│                                # 20 analytical CSVs + 8 star-schema fact/dim CSVs + KPIs
 ├── tests/
 │   ├── test_generator.py      # 10 tests
 │   ├── test_graph.py          # 18 tests (cycle, centrality, rolling window)
 │   ├── test_sql.py            # 10 tests (structuring, velocity, time-window)
 │   ├── test_risk_engine.py    # 27 tests (rules, composite score, IF)
-│   └── test_api.py            # 14 tests (endpoints, WebSocket)
+│   ├── test_api.py            # 14 tests (endpoints, WebSocket)
+│   ├── test_data_quality.py   # 28 tests (all 14 checks + regression test)
+│   ├── test_sql_analytics.py  # 18 tests (every query + known-answer tests)
+│   ├── test_kpi_layer.py      # 9 tests (every KPI against a fixture)
+│   ├── test_reproducibility.py # 10 tests (both nondeterminism root causes + mutation check)
+│   └── test_star_schema.py    # 13 tests (grain, PK uniqueness, FK integrity, no invented columns)
 ├── docs/
 │   ├── architecture.md        # Detailed component documentation
-│   └── api.md                 # REST and WebSocket API reference
+│   ├── api.md                 # REST and WebSocket API reference
+│   ├── analytics.md           # Analytics layer, KPI defs, business-question map
+│   ├── data_quality.md        # Data quality framework, all 14 checks
+│   ├── powerbi.md             # Power BI model, pages, SQL-vs-DAX split
+│   └── dax_measures.md        # DAX measure syntax
 ├── .github/workflows/ci.yml   # GitHub Actions CI
 ├── requirements.txt
 ├── README.md
@@ -330,18 +346,91 @@ python scripts/benchmark_sql.py --full --seed 42
 
 ---
 
+## Financial Analytics Layer
+
+On top of the real-time AML engine above, this project also includes a
+batch **financial data analytics / BI layer** — the same architecture a
+compliance-analytics or BI analyst role would expect, built around the
+same `transactions`/`alerts` data the AML engine already produces
+rather than a separate mock dataset. Full details, including the exact
+business-question-to-query mapping and known limitations, are in
+`docs/analytics.md`, `docs/data_quality.md`, and `docs/powerbi.md`.
+
+### Data Quality
+
+`backend/data_quality.py` runs 14 deterministic, read-only SQL checks
+against `transactions`/`alerts` (nulls, duplicates, invalid amounts,
+invalid currency/jurisdiction codes, self-transactions, bad timestamps,
+invalid pattern types, orphaned alerts, blank entity IDs, and
+statistical outliers) and writes structured results to a
+`data_quality_results` table and `data_quality_report.json`. Checks
+never delete data — they only report. See `docs/data_quality.md` for
+the full check list, including a real bug the framework caught on
+itself during development (an incorrect assumed set of `pattern_type`
+values that would have wrongly failed ~36% of legitimate transactions).
+
+### Advanced SQL Analytics
+
+`sql/analytics/` contains 12 files covering 19 distinct, business-
+question-driven queries against the real schema — CTEs, `RANK()`,
+`DENSE_RANK()`, `ROW_NUMBER()`, `LAG()`/`LEAD()`, rolling `SUM()`/`AVG()
+OVER()`, `NTILE()` quartile segmentation, correlated subqueries, and
+`CASE`-based classification. Every query answers one of the 16 business
+questions listed in `docs/analytics.md` (e.g. "which entities have
+repeated structuring alerts," "which entities act as major
+intermediaries," "what percentage of transaction value is flagged") —
+none were added just to demonstrate a syntax feature.
+
+### Analytics Pipeline & KPI Layer
+
+```bash
+python scripts/build_analytics_dataset.py
+```
+
+Runs the full pipeline end to end: generates a reproducible seeded
+sample (5,000 transactions, seed=42) through the **real** processing
+pipeline (`backend.streaming._process_transaction` — the same function
+the live FastAPI service uses, not a shortcut), runs the data-quality
+framework, executes every analytics query, computes the documented KPI
+layer (16 KPIs — total/median transaction value, suspicious transaction
+rate, flagged value %, structuring alert count, circular-flow entity
+count, high-risk jurisdiction exposure, and more — see
+`docs/analytics.md` for exact definitions), and exports 19 Power-BI-
+ready CSVs plus a KPI summary to `exports/`. A small version of this
+export (~160KB) is committed as a reproducible fixture; the database
+itself is not (see `.gitignore`).
+
+### Power BI Integration
+
+`docs/powerbi.md` specifies which exported CSVs to import, the
+recommended relationships between them, five dashboard pages
+(Executive Overview, Risk Analytics, Entity & Network Risk, Temporal &
+Jurisdiction Analysis, Data Quality), and which calculations belong in
+SQL vs. DAX. `docs/dax_measures.md` has the actual DAX syntax for 16
+measures. **No `.pbix` file is included** — Power BI Desktop was not
+available in the build environment, so this is the complete dataset +
+schema + DAX specification a Power BI build would use, not a claim that
+a working `.pbix` already exists.
+
+---
+
 ## Running Tests
 
 ```bash
 pytest tests/ -v
 ```
 
-**79 tests, 0 failures** across:
+**163 tests, 0 failures** across:
 - `test_generator.py` — 10 tests (reproducibility, type correctness, pattern logic)
 - `test_graph.py` — 18 tests (cycle detection, centrality, rolling window correctness)
 - `test_sql.py` — 10 tests (structuring detection, velocity, time-window filtering)
 - `test_risk_engine.py` — 27 tests (AML rules, composite score, Isolation Forest)
 - `test_api.py` — 14 tests (REST endpoints, WebSocket handshake)
+- `test_data_quality.py` — 28 tests (all 14 checks, including a regression test pinning every real generator pattern_type)
+- `test_sql_analytics.py` — 24 tests (every analytics query executes; known-answer tests for RANK vs DENSE_RANK, rolling windows, percentage calculations; 6 tests proving rule-trigger vs. raw-score semantics are correct)
+- `test_kpi_layer.py` — 9 tests (every KPI against a hand-computable fixture)
+- `test_reproducibility.py` — 10 tests (the two nondeterminism root causes below, plus a mutation check and export-level byte-identity)
+- `test_star_schema.py` — 13 tests (fact/dim grain, PK uniqueness, FK integrity, config-sourced columns verified against `backend.config`, not hardcoded)
 
 ---
 
@@ -356,6 +445,7 @@ The dashboard connects to the live FastAPI backend via REST and WebSocket. No da
 - **Graph Analytics** — betweenness centrality bar chart, eigenvector vs betweenness scatter, PageRank-based network visualisation, community size chart
 - **Alerts** — selectable alert detail with radar chart of component scores and human-readable AML rule explanations
 - **Structuring** — entities flagged by SQL window aggregation with window statistics
+- **Analytics** — the financial analytics/BI layer above, read from `exports/*.csv` (Executive Overview, Risk Trends, Entity Risk Ranking, Transaction Analytics, AML Rule Analysis, Jurisdiction Analysis, Data Quality). Run `python scripts/build_analytics_dataset.py` first; this tab reads a batch snapshot, not the live stream.
 
 ---
 

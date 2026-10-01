@@ -1,0 +1,15 @@
+check_name,status,rows_checked,violations,violation_pct,severity,description
+extreme_amount_outliers,WARN,5000,18,0.36,LOW,"Transactions whose amount exceeds mean + 6 standard deviations (cutoff=$1,685,492.66, mean=$77,909.84, std=$267,930.47). These are not necessarily invalid (large legitimate wires exist) but are flagged for analyst review since they can dominate SUM-based KPIs."
+null_required_fields,PASS,5000,0,0.0,LOW,"Rows with a NULL value in any column that every downstream component (SQL aggregation, graph engine, feature builder) requires to be present."
+duplicate_transaction_ids,PASS,5000,0,0.0,LOW,"tx_id is the primary key; this counts rows beyond the first for any tx_id that appears more than once. Because tx_id is PRIMARY KEY, true duplicates cannot exist post-insert -- a non-zero count here would indicate a schema/constraint failure, so this check exists as a defensive tripwire, not because duplicates are expected."
+duplicate_transaction_records,PASS,5000,0,0.0,LOW,"Distinct tx_ids that nonetheless share identical (source_entity, dest_entity, amount, currency, timestamp) -- the same economic event recorded twice, which would double-count volume and value KPIs if not flagged."
+invalid_amounts,PASS,5000,0,0.0,LOW,Transactions with amount <= 0. A financial transaction with zero or negative value is not a valid transfer in this model (refunds/reversals are out of scope for this dataset) and would distort every downstream sum/avg/VaR-style aggregate.
+invalid_currency,PASS,5000,0,0.0,LOW,"Currency codes outside the 7 configured in GEN_CFG.currencies: ['AED', 'CHF', 'EUR', 'GBP', 'HKD', 'SGD', 'USD']."
+invalid_jurisdiction,PASS,5000,0,0.0,LOW,src_jurisdiction or dst_jurisdiction outside the 14 configured jurisdictions.
+self_transactions,PASS,5000,0,0.0,LOW,Transactions where source_entity equals dest_entity. An entity moving funds to itself is not economically meaningful and is either a generator defect or a data entry error.
+invalid_timestamps,PASS,5000,0,0.0,LOW,Timestamps that do not parse as valid SQLite datetime values (strftime returns NULL for anything unparseable).
+future_timestamps,PASS,5000,0,0.0,LOW,Transactions timestamped after the current UTC time -- a transaction cannot be recorded before it happens.
+invalid_transaction_type,PASS,5000,0,0.0,LOW,"pattern_type outside the 6 labels the generator and evaluation pipeline recognise: ['circular_flow', 'high_risk_jx', 'layering', 'normal', 'structuring', 'velocity_burst']."
+negative_inter_arrival,PASS,5000,0,0.0,LOW,"inter_arrival_s (seconds since the entity's previous transaction) is negative, which is only possible if rows were inserted out of generation order."
+orphaned_alerts,PASS,610,0,0.0,LOW,Alerts whose tx_id has no matching row in transactions -- a referential-integrity violation that would make an alert impossible to investigate (no source transaction to inspect).
+blank_entity_ids,PASS,5000,0,0.0,LOW,source_entity or dest_entity is an empty string or whitespace-only -- distinct from NULL (covered by null_required_fields) but equally unusable for graph construction.

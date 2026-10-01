@@ -1,0 +1,7 @@
+pattern_type,description
+circular_flow,Transactions forming a closed loop back to the originating entity.
+high_risk_jx,Transaction generated with a source or destination in a configured high-risk jurisdiction.
+layering,Multi-hop chain of transactions moving funds through several entities.
+normal,Ordinary transaction; no synthetic anomaly pattern applied.
+structuring,"Series of sub-threshold transactions from one source, generated to test structuring detection."
+velocity_burst,Many transactions from one source in a short time window.

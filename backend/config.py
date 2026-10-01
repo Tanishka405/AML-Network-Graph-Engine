@@ -96,6 +96,10 @@ class GraphConfig:
     max_nodes: int = 500
     pagerank_alpha: float = 0.85
     betweenness_k: int | None = None        # None = exact; int = approximation
+    # Seed for networkx's k-sampled betweenness approximation. Without it the
+    # sampled source nodes come from Python's unseeded global RNG, making
+    # graph scores (and therefore alert counts) differ run to run.
+    betweenness_seed: int = 42
     eigenvector_max_iter: int = 300
     eigenvector_tol: float = 1e-6
 

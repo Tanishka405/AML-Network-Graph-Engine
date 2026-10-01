@@ -1,0 +1,4 @@
+risk_category,tx_count,total_value,avg_amount,pct_of_total_value
+UNFLAGGED,4390,384570728.06,87601.53,98.72
+HIGH,553,4514011.71,8162.77,1.16
+CRITICAL,57,464465.23,8148.51,0.12

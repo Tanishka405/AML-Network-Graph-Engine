@@ -204,7 +204,8 @@ class TransactionGraph:
                 if k_samples is None and n > 50:
                     k_samples = min(50, n)
                 self._cache["betweenness"] = nx.betweenness_centrality(
-                    G, weight="weight", k=k_samples, normalized=True
+                    G, weight="weight", k=k_samples, normalized=True,
+                    seed=self.cfg.betweenness_seed,
                 )
             except Exception:
                 self._cache["betweenness"] = {}

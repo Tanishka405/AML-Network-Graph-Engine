@@ -617,8 +617,23 @@ def _tab_structuring(df: pd.DataFrame):
     if df.empty or "structuring_score" not in df.columns:
         st.info("No data yet."); return
 
-    # Entities with structuring signals
-    sdf = df[df["structuring_score"] > 0.01].copy()
+    # Entities with an actually-triggered structuring alert (per
+    # backend/aml_rules.py rule_structuring(): count>=3, amount<threshold,
+    # score>0.1 -- not just a nonzero raw score). alert_reason_str is
+    # populated only from triggered rules (see enrich_transaction()), so
+    # it's the authoritative signal to filter on here, not an arbitrary
+    # score cutoff duplicated from the rule's real threshold logic.
+    if "alert_reason_str" in df.columns:
+        sdf = df[df["alert_reason_str"].fillna("").str.contains("STRUCTURING:")].copy()
+    else:
+        # Older broadcast payload without alert_reason_str -- fall back to
+        # the raw score, clearly caveated rather than silently wrong.
+        st.caption(
+            "⚠ alert_reason_str not present in this feed; falling back to "
+            "structuring_score > 0.1 as an approximation of the real rule "
+            "trigger condition (see backend/aml_rules.py rule_structuring())."
+        )
+        sdf = df[df["structuring_score"] > 0.1].copy()
     if sdf.empty:
         st.info("No structuring patterns detected in current window.")
         st.markdown("**How it works:** SQL aggregation checks whether an entity "
@@ -628,7 +643,7 @@ def _tab_structuring(df: pd.DataFrame):
 
     c1, c2 = st.columns(2)
     with c1:
-        st.metric("Structuring signals", len(sdf))
+        st.metric("Structuring alerts (rule triggered)", len(sdf))
         st.metric("Unique entities flagged",
                   sdf["source_entity"].nunique() if "source_entity" in sdf.columns else 0)
 
@@ -659,6 +674,152 @@ def _tab_structuring(df: pd.DataFrame):
         st.plotly_chart(fig, use_container_width=True)
 
 # ── Main ──────────────────────────────────────────────────────────────────────
+def _load_export(name: str) -> pd.DataFrame:
+    """Load one CSV from exports/ (written by
+    scripts/build_analytics_dataset.py). Returns an empty DataFrame with
+    a note rendered instead of raising, since the analytics tab should
+    degrade gracefully if the build script hasn't been run yet."""
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                         "exports", name)
+    if not os.path.exists(path):
+        return pd.DataFrame()
+    try:
+        return pd.read_csv(path)
+    except Exception:
+        return pd.DataFrame()
+
+
+def _tab_analytics():
+    """Financial analytics / BI layer built on top of the live AML engine.
+    Reads exports/*.csv, written by `python scripts/build_analytics_dataset.py`.
+    This tab does NOT talk to the live backend -- it is a snapshot of the
+    last analytics build, by design (the SQL analytics layer is meant to
+    run periodically over a batch, not per-transaction). See
+    docs/analytics.md for the full pipeline this tab visualises."""
+    kpi_df = _load_export("kpi_summary.csv")
+    if kpi_df.empty:
+        st.info(
+            "No analytics export found yet. Run "
+            "`python scripts/build_analytics_dataset.py` from the repo root, "
+            "then reload this tab."
+        )
+        return
+    kpis = dict(zip(kpi_df["kpi"], kpi_df["value"]))
+
+    # ── Executive Risk Overview ─────────────────────────────────────────
+    st.markdown("### 📊 Executive Risk Overview")
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("Total Transactions", f"{int(float(kpis.get('total_transactions', 0))):,}")
+    c2.metric("Total Value", f"${float(kpis.get('total_transaction_value', 0)):,.0f}")
+    c3.metric("Total Alerts", f"{int(float(kpis.get('total_alerts', 0))):,}")
+    c4.metric("Suspicious Rate", f"{float(kpis.get('suspicious_transaction_rate_pct', 0)):.2f}%")
+    c5.metric("Avg Risk Score", f"{float(kpis.get('average_risk_score', 0)):.3f}")
+
+    pattern_df = _load_export("transaction_summary_by_pattern.csv")
+    if not pattern_df.empty:
+        fig = px.pie(pattern_df, names="pattern_type", values="tx_count",
+                     title="Transaction Mix by Pattern Type", hole=0.45)
+        st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("---")
+
+    # ── Risk Trends ──────────────────────────────────────────────────────
+    st.markdown("### 📈 Risk Trends")
+    trend_df = _load_export("daily_risk_trends.csv")
+    if not trend_df.empty:
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=trend_df["alert_date"], y=trend_df["avg_risk_score"],
+                                  name="Daily Avg Risk", mode="lines+markers"))
+        fig.add_trace(go.Scatter(x=trend_df["alert_date"], y=trend_df["rolling_7d_avg_risk"],
+                                  name="7-Day Rolling Avg", line=dict(width=3)))
+        fig.update_layout(title="Average Risk Score Over Time", height=350)
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.caption("No daily risk trend data in this export.")
+
+    st.markdown("---")
+
+    # ── Entity Risk Ranking ──────────────────────────────────────────────
+    st.markdown("### 🏦 Entity Risk Ranking")
+    risk_df = _load_export("entity_risk_summary.csv")
+    if not risk_df.empty:
+        st.dataframe(risk_df.head(15), use_container_width=True, hide_index=True)
+    else:
+        st.caption("No entities met the >=2-alert threshold for ranking in this sample.")
+
+    st.markdown("---")
+
+    # ── Transaction Analytics ────────────────────────────────────────────
+    st.markdown("### 💳 Transaction Analytics")
+    tcol1, tcol2 = st.columns(2)
+    with tcol1:
+        cur_df = _load_export("transaction_summary_by_currency.csv")
+        if not cur_df.empty:
+            fig = px.bar(cur_df, x="currency", y="total_value", title="Total Value by Currency")
+            st.plotly_chart(fig, use_container_width=True)
+    with tcol2:
+        entity_df = _load_export("entity_activity.csv")
+        if not entity_df.empty:
+            fig = px.bar(entity_df.head(10), x="entity", y="tx_count",
+                         title="Top 10 Entities by Transaction Count")
+            fig.update_xaxes(tickangle=45)
+            st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("---")
+
+    # ── AML Rule Analysis ────────────────────────────────────────────────
+    st.markdown("### ⚖️ AML Rule Analysis")
+    rule_df = _load_export("rule_frequency.csv")
+    if not rule_df.empty:
+        fig = px.bar(rule_df.sort_values("alert_contributions", ascending=True),
+                     x="alert_contributions", y="rule_name", orientation="h",
+                     title="Alert Contributions by Rule")
+        st.plotly_chart(fig, use_container_width=True)
+        st.caption(
+            "A rule 'contributes' to an alert when its component score is > 0 "
+            "(see backend/aml_rules.py RuleResult.triggered). This counts how "
+            "often each rule fires, not how much weight it carries in the "
+            "composite score (see backend/config.py RiskWeights for that)."
+        )
+
+    st.markdown("---")
+
+    # ── Jurisdiction Analysis ────────────────────────────────────────────
+    st.markdown("### 🌍 Jurisdiction Analysis")
+    jx_df = _load_export("jurisdiction_risk.csv")
+    if not jx_df.empty:
+        fig = px.bar(jx_df.sort_values("alert_rate_pct", ascending=False),
+                     x="jurisdiction", y="alert_rate_pct",
+                     title="Alert Rate % by Source Jurisdiction")
+        st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("---")
+
+    # ── Data Quality ─────────────────────────────────────────────────────
+    st.markdown("### ✅ Data Quality")
+    dq_df = _load_export("data_quality_report.csv")
+    if not dq_df.empty:
+        status_colors = {"PASS": "#30d158", "WARN": "#ffd60a", "FAIL": "#ff3b30"}
+        def _style(row):
+            color = status_colors.get(row["status"], "#ffffff")
+            return [f"background-color: {color}22"] * len(row)
+        st.dataframe(
+            dq_df[["check_name", "status", "rows_checked", "violations",
+                   "violation_pct", "severity"]].style.apply(_style, axis=1),
+            use_container_width=True, hide_index=True,
+        )
+        n_fail = (dq_df["status"] == "FAIL").sum()
+        n_warn = (dq_df["status"] == "WARN").sum()
+        if n_fail:
+            st.error(f"{n_fail} data quality check(s) FAILED — treat findings above with caution.")
+        elif n_warn:
+            st.warning(f"{n_warn} data quality check(s) WARNED.")
+        else:
+            st.success("All data quality checks passed.")
+    else:
+        st.caption("No data quality report found. Run scripts/build_analytics_dataset.py.")
+
+
 def main():
     _ensure_ws()
     _drain_queue()
@@ -679,10 +840,10 @@ def main():
     _kpi_row(df, stats, _get("/db/counts"))
     st.markdown("---")
 
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
         "📡 Live Feed", "📊 Risk Distribution",
         "⚡ Velocity", "🕸 Graph Analytics",
-        "🚨 Alerts", "🔍 Structuring",
+        "🚨 Alerts", "🔍 Structuring", "📈 Analytics",
     ])
 
     with tab1: _tab_live(df)
@@ -691,6 +852,7 @@ def main():
     with tab4: _tab_graph(df, graph_summary)
     with tab5: _tab_alerts(df)
     with tab6: _tab_structuring(df)
+    with tab7: _tab_analytics()
 
     time.sleep(REFRESH_S)
     st.rerun()

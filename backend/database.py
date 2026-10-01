@@ -90,6 +90,23 @@ CREATE TABLE IF NOT EXISTS evaluation_results (
     threshold           REAL,
     notes               TEXT DEFAULT ''
 );
+
+-- ── data_quality_results ────────────────────────────────────────────────────
+-- Written by backend/data_quality.py. One row per check per run. Never used
+-- to silently drop data -- this table is a report, not a filter.
+CREATE TABLE IF NOT EXISTS data_quality_results (
+    dq_id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_timestamp       TEXT NOT NULL,
+    check_name          TEXT NOT NULL,
+    status              TEXT NOT NULL,     -- PASS / WARN / FAIL
+    rows_checked        INTEGER NOT NULL,
+    violations          INTEGER NOT NULL,
+    violation_rate      REAL NOT NULL,
+    severity            TEXT NOT NULL,     -- LOW / MEDIUM / HIGH
+    description         TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_dq_run_ts ON data_quality_results(run_timestamp);
 """
 
 
@@ -386,6 +403,44 @@ def count_transactions(path: str | None = None) -> int:
 def count_alerts(path: str | None = None) -> int:
     with db_conn(path) as conn:
         return conn.execute("SELECT COUNT(*) FROM alerts").fetchone()[0]
+
+
+def save_data_quality_results(
+    results: List[Dict[str, Any]],
+    run_timestamp: str | None = None,
+    path: str | None = None,
+) -> int:
+    """
+    Persist a batch of data-quality check results (see backend/data_quality.py).
+    Each dict must contain: check_name, status, rows_checked, violations,
+    violation_rate, severity, description. Returns number of rows inserted.
+    """
+    run_timestamp = run_timestamp or datetime.now(timezone.utc).isoformat()
+    sql = """
+        INSERT INTO data_quality_results
+            (run_timestamp, check_name, status, rows_checked,
+             violations, violation_rate, severity, description)
+        VALUES
+            (:run_timestamp, :check_name, :status, :rows_checked,
+             :violations, :violation_rate, :severity, :description)
+    """
+    rows = [{**r, "run_timestamp": run_timestamp} for r in results]
+    with db_conn(path) as conn:
+        conn.executemany(sql, rows)
+        n = conn.execute("SELECT changes()").fetchone()[0]
+    return n
+
+
+def get_latest_data_quality_results(path: str | None = None) -> List[Dict[str, Any]]:
+    """Return the most recent data-quality run's check results."""
+    sql = """
+        SELECT * FROM data_quality_results
+        WHERE run_timestamp = (SELECT MAX(run_timestamp) FROM data_quality_results)
+        ORDER BY severity DESC, violation_rate DESC
+    """
+    with db_conn(path) as conn:
+        rows = conn.execute(sql).fetchall()
+    return [dict(r) for r in rows]
 
 
 def save_evaluation(result: Dict[str, Any], path: str | None = None) -> int:

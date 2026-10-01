@@ -1,0 +1,7 @@
+pattern_type,tx_count,pct_of_all_tx,total_value,avg_amount
+normal,2643,52.86,256861607.74,97185.63
+velocity_burst,1072,21.44,8244270.32,7690.55
+structuring,661,13.22,5928904.21,8969.6
+layering,352,7.04,91206956.46,259110.67
+circular_flow,198,3.96,7410214.72,37425.33
+high_risk_jx,74,1.48,19897251.55,268881.78

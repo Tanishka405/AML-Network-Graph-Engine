@@ -36,6 +36,16 @@ data/
 *.csv
 *.parquet
 *.jsonl
+data_quality_report.json
+
+# exports/ is the one exception: it holds the small, seeded (n=5000,
+# seed=42), reproducible analytics fixture written by
+# scripts/build_analytics_dataset.py (~160KB total) -- committed
+# intentionally so Power BI / the Streamlit Analytics tab has something
+# to load without requiring a ~1 minute pipeline run first. Do NOT widen
+# this to a full 500K-transaction export -- regenerate locally instead.
+!exports/
+!exports/*.csv
 
 # ── Logs ──────────────────────────────────────────────────────────────────────
 *.log
